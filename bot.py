@@ -66,12 +66,6 @@ def rating_kb(video_id):
         buttons.append(row)
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-@dp.message()
-async def global_check(msg: types.Message):
-    if not await check_sub(msg.from_user.id):
-        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
-        return
-
 @dp.message(Command("start"))
 async def start(msg: types.Message):
     if not await check_sub(msg.from_user.id):
@@ -91,6 +85,7 @@ async def check_sub_btn(call: types.CallbackQuery):
 @dp.message(lambda m: m.video_note)
 async def video(msg: types.Message):
     if not await check_sub(msg.from_user.id):
+        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
         return
 
     user_id = msg.from_user.id
@@ -112,6 +107,10 @@ async def video(msg: types.Message):
 
 @dp.message(lambda m: m.text == "💰 Мой баланс")
 async def balance(msg: types.Message):
+    if not await check_sub(msg.from_user.id):
+        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
+        return
+
     coins = get_user(msg.from_user.id)
     await msg.answer(f"💰 У тебя {coins} монет")
 
@@ -121,6 +120,10 @@ async def rules(msg: types.Message):
 
 @dp.message(lambda m: m.text == "⭐ Мои оценки")
 async def my_ratings(msg: types.Message):
+    if not await check_sub(msg.from_user.id):
+        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
+        return
+
     user_id = msg.from_user.id
 
     cursor.execute("""
@@ -175,6 +178,10 @@ async def give_coins(msg: types.Message):
 
 @dp.message(lambda m: m.text == "📺 Посмотреть кружок")
 async def watch(msg: types.Message):
+    if not await check_sub(msg.from_user.id):
+        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
+        return
+
     user_id = msg.from_user.id
     coins = get_user(user_id)
 
