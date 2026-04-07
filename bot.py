@@ -25,7 +25,6 @@ conn.commit()
 
 cursor.execute("PRAGMA table_info(videos)")
 columns = [col[1] for col in cursor.fetchall()]
-
 if "active" not in columns:
     cursor.execute("ALTER TABLE videos ADD COLUMN active INTEGER DEFAULT 1")
     conn.commit()
@@ -72,9 +71,13 @@ def rating_kb(video_id):
         [InlineKeyboardButton(text=str(i), callback_data=f"rate_{video_id}_{i}") for i in range(6,11)]
     ])
 
+async def banned_msg(msg):
+    await msg.answer("🚫 Вы заблокированы\nОбжаловать — @HETyMOHET")
+
 @dp.message(Command("start"))
 async def start(msg: types.Message):
     if is_banned(msg.from_user.id):
+        await banned_msg(msg)
         return
     if not await check_sub(msg.from_user.id):
         await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
@@ -92,6 +95,7 @@ async def check_sub_btn(call: types.CallbackQuery):
 @dp.message(lambda m: m.video_note)
 async def video(msg: types.Message):
     if is_banned(msg.from_user.id):
+        await banned_msg(msg)
         return
     if not await check_sub(msg.from_user.id):
         await msg.answer("❗ Подпишись", reply_markup=sub_kb())
@@ -111,10 +115,7 @@ async def video(msg: types.Message):
     await msg.answer("+1 монета 💰")
 
     try:
-        await bot.send_message(
-            LOG_CHAT_ID,
-            f"📥 Кружок\n👤 @{username}\n🆔 {user_id}\n🎥 ID кружка: {video_id}"
-        )
+        await bot.send_message(LOG_CHAT_ID, f"📥 Кружок\n👤 @{username}\n🆔 {user_id}\n🎥 ID кружка: {video_id}")
         await bot.send_video_note(LOG_CHAT_ID, msg.video_note.file_id)
     except:
         pass
@@ -122,6 +123,7 @@ async def video(msg: types.Message):
 @dp.message(lambda m: m.text == "📺 Посмотреть кружок")
 async def watch(msg: types.Message):
     if is_banned(msg.from_user.id):
+        await banned_msg(msg)
         return
     if not await check_sub(msg.from_user.id):
         await msg.answer("❗ Подпишись", reply_markup=sub_kb())
@@ -158,20 +160,25 @@ async def watch(msg: types.Message):
 
 @dp.message(lambda m: m.text == "💰 Мой баланс")
 async def balance(msg: types.Message):
+    if is_banned(msg.from_user.id):
+        await banned_msg(msg)
+        return
     coins = get_user(msg.from_user.id)
     await msg.answer(f"💰 У тебя {coins} монет")
 
 @dp.message(lambda m: m.text == "⭐ Мои оценки")
 async def my_ratings(msg: types.Message):
-    user_id = msg.from_user.id
+    if is_banned(msg.from_user.id):
+        await banned_msg(msg)
+        return
 
+    user_id = msg.from_user.id
     cursor.execute("""
     SELECT ratings.score, ratings.rater_id
     FROM ratings
     JOIN videos ON videos.id = ratings.video_id
     WHERE videos.user_id = ?
     """, (user_id,))
-
     rows = cursor.fetchall()
 
     if not rows:
@@ -179,7 +186,6 @@ async def my_ratings(msg: types.Message):
         return
 
     text = ""
-
     for score, rater_id in rows:
         if score >= 5:
             try:
@@ -197,19 +203,11 @@ async def my_ratings(msg: types.Message):
 async def give_coins(msg: types.Message):
     if msg.from_user.id != ADMIN_ID:
         return
+    _, user_id, amount = msg.text.split()
+    user_id = int(user_id)
+    amount = int(amount)
 
-    try:
-        _, user_id, amount = msg.text.split()
-        user_id = int(user_id)
-        amount = int(amount)
-    except:
-        await msg.answer("Используй: /give user_id количество")
-        return
-
-    cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO users VALUES (?, 0)", (user_id,))
-
+    cursor.execute("INSERT OR IGNORE INTO users VALUES (?, 0)", (user_id,))
     cursor.execute("UPDATE users SET coins = coins + ? WHERE user_id=?", (amount, user_id))
     conn.commit()
 
@@ -224,7 +222,28 @@ async def ban(msg: types.Message):
     cursor.execute("INSERT OR IGNORE INTO banned VALUES (?)", (user_id,))
     conn.commit()
 
+    try:
+        await bot.send_message(user_id, "🚫 Вы заблокированы\nОбжаловать — @HETyMOHET")
+    except:
+        pass
+
     await msg.answer("Забанен")
+
+@dp.message(lambda m: m.text and m.text.startswith("/unban"))
+async def unban(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return
+
+    user_id = int(msg.text.split()[1])
+    cursor.execute("DELETE FROM banned WHERE user_id=?", (user_id,))
+    conn.commit()
+
+    try:
+        await bot.send_message(user_id, "✅ Ваш аккаунт разблокирован")
+    except:
+        pass
+
+    await msg.answer("Разбанен")
 
 @dp.message(lambda m: m.text and m.text.startswith("/delete"))
 async def delete_video(msg: types.Message):
@@ -265,7 +284,5 @@ async def rate(call: types.CallbackQuery):
 async def main():
     await dp.start_polling(bot)
 
-if __name__ == "__main__":
-    asyncio.run(main())
 if __name__ == "__main__":
     asyncio.run(main())
