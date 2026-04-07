@@ -7,6 +7,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 
 API_TOKEN = "8719742274:AAGPAuZxX5BXuvqrti5yV4auChHb5H51RHA"
 LOG_CHAT_ID = -1003748900775
+ADMIN_ID = 858855330
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -115,6 +116,33 @@ async def my_ratings(msg: types.Message):
             text += f"{score}/10 (анонимно)\n"
 
     await msg.answer(text)
+
+@dp.message(lambda m: m.text.startswith("/give"))
+async def give_coins(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        _, user_id, amount = msg.text.split()
+        user_id = int(user_id)
+        amount = int(amount)
+    except:
+        await msg.answer("Используй: /give user_id количество")
+        return
+
+    cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO users VALUES (?, 0)", (user_id,))
+
+    cursor.execute("UPDATE users SET coins = coins + ? WHERE user_id=?", (amount, user_id))
+    conn.commit()
+
+    await msg.answer(f"✅ Выдано {amount} монет пользователю {user_id}")
+
+    try:
+        await bot.send_message(user_id, f"💰 Тебе выдали {amount} монет")
+    except:
+        pass
 
 @dp.message(lambda m: m.text == "📺 Посмотреть кружок")
 async def watch(msg: types.Message):
