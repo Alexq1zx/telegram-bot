@@ -60,7 +60,7 @@ async def start(msg: types.Message):
 @dp.message(lambda m: m.video_note)
 async def video(msg: types.Message):
     user_id = msg.from_user.id
-    username = msg.from_user.username
+    username = msg.from_user.username or "no_username"
 
     get_user(user_id)
 
@@ -117,7 +117,7 @@ async def my_ratings(msg: types.Message):
 
     await msg.answer(text)
 
-@dp.message(lambda m: m.text.startswith("/give"))
+@dp.message(lambda m: m.text and m.text.startswith("/give"))
 async def give_coins(msg: types.Message):
     if msg.from_user.id != ADMIN_ID:
         return
@@ -182,13 +182,22 @@ async def rate(call: types.CallbackQuery):
     video_id = int(video_id)
     score = int(score)
 
+    cursor.execute("SELECT * FROM ratings WHERE video_id=? AND rater_id=?", (video_id, user_id))
+    if cursor.fetchone():
+        await call.answer("Ты уже оценил")
+        return
+
     cursor.execute("INSERT INTO ratings VALUES (?, ?, ?)", (video_id, user_id, score))
     conn.commit()
 
     cursor.execute("SELECT user_id FROM videos WHERE id=?", (video_id,))
-    owner_id = cursor.fetchone()[0]
+    owner = cursor.fetchone()
+    if not owner:
+        await call.answer("Ошибка")
+        return
 
-    username = call.from_user.username
+    owner_id = owner[0]
+    username = call.from_user.username or "no_username"
 
     if score >= 5:
         text = f"⭐ Твой кружок оценили на {score}/10\n👤 @{username}"
