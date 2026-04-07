@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-API_TOKEN = "ТВОЙ_ТОКЕН"
+API_TOKEN = "8719742274:AAGPAuZxX5BXuvqrti5yV4auChHb5H51RHA"
 LOG_CHAT_ID = -1003748900775
 ADMIN_ID = 858855330
 CHANNEL_ID = "@tinleo"
