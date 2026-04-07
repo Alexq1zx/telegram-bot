@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-API_TOKEN = "8719742274:AAGPAuZxX5BXuvqrti5yV4auChHb5H51RHA"
+API_TOKEN = "ТВОЙ_ТОКЕН"
 LOG_CHAT_ID = -1003748900775
 ADMIN_ID = 858855330
 CHANNEL_ID = "@tinleo"
@@ -17,11 +17,18 @@ conn = sqlite3.connect("db.sqlite3")
 cursor = conn.cursor()
 
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, coins INTEGER)")
-cursor.execute("CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, file_id TEXT, user_id INTEGER, active INTEGER DEFAULT 1)")
+cursor.execute("CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, file_id TEXT, user_id INTEGER)")
 cursor.execute("CREATE TABLE IF NOT EXISTS viewed (user_id INTEGER, video_id INTEGER)")
 cursor.execute("CREATE TABLE IF NOT EXISTS ratings (video_id INTEGER, rater_id INTEGER, score INTEGER)")
 cursor.execute("CREATE TABLE IF NOT EXISTS banned (user_id INTEGER PRIMARY KEY)")
 conn.commit()
+
+cursor.execute("PRAGMA table_info(videos)")
+columns = [col[1] for col in cursor.fetchall()]
+
+if "active" not in columns:
+    cursor.execute("ALTER TABLE videos ADD COLUMN active INTEGER DEFAULT 1")
+    conn.commit()
 
 kb = ReplyKeyboardMarkup(
     keyboard=[
@@ -69,11 +76,9 @@ def rating_kb(video_id):
 async def start(msg: types.Message):
     if is_banned(msg.from_user.id):
         return
-
     if not await check_sub(msg.from_user.id):
         await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
         return
-
     get_user(msg.from_user.id)
     await msg.answer("Отправь кружок 🎥", reply_markup=kb)
 
@@ -88,7 +93,6 @@ async def check_sub_btn(call: types.CallbackQuery):
 async def video(msg: types.Message):
     if is_banned(msg.from_user.id):
         return
-
     if not await check_sub(msg.from_user.id):
         await msg.answer("❗ Подпишись", reply_markup=sub_kb())
         return
@@ -98,7 +102,7 @@ async def video(msg: types.Message):
 
     get_user(user_id)
 
-    cursor.execute("INSERT INTO videos (file_id, user_id) VALUES (?, ?)", (msg.video_note.file_id, user_id))
+    cursor.execute("INSERT INTO videos (file_id, user_id, active) VALUES (?, ?, 1)", (msg.video_note.file_id, user_id))
     cursor.execute("UPDATE users SET coins = coins + 1 WHERE user_id=?", (user_id,))
     conn.commit()
 
@@ -114,7 +118,6 @@ async def video(msg: types.Message):
 async def watch(msg: types.Message):
     if is_banned(msg.from_user.id):
         return
-
     if not await check_sub(msg.from_user.id):
         await msg.answer("❗ Подпишись", reply_markup=sub_kb())
         return
@@ -146,9 +149,67 @@ async def watch(msg: types.Message):
     conn.commit()
 
     await msg.answer_video_note(file_id)
-    await msg.answer("Оцени:", reply_markup=rating_kb(video_id))
+    await msg.answer(f"ID кружка: {video_id}", reply_markup=rating_kb(video_id))
 
-# 🔴 БАН
+@dp.message(lambda m: m.text == "💰 Мой баланс")
+async def balance(msg: types.Message):
+    coins = get_user(msg.from_user.id)
+    await msg.answer(f"💰 У тебя {coins} монет")
+
+@dp.message(lambda m: m.text == "⭐ Мои оценки")
+async def my_ratings(msg: types.Message):
+    user_id = msg.from_user.id
+
+    cursor.execute("""
+    SELECT ratings.score, ratings.rater_id
+    FROM ratings
+    JOIN videos ON videos.id = ratings.video_id
+    WHERE videos.user_id = ?
+    """, (user_id,))
+
+    rows = cursor.fetchall()
+
+    if not rows:
+        await msg.answer("Нет оценок")
+        return
+
+    text = ""
+
+    for score, rater_id in rows:
+        if score >= 5:
+            try:
+                user = await bot.get_chat(rater_id)
+                username = user.username or user.first_name
+                text += f"{score}/10 от @{username}\n"
+            except:
+                text += f"{score}/10\n"
+        else:
+            text += f"{score}/10 (анонимно)\n"
+
+    await msg.answer(text)
+
+@dp.message(lambda m: m.text and m.text.startswith("/give"))
+async def give_coins(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        _, user_id, amount = msg.text.split()
+        user_id = int(user_id)
+        amount = int(amount)
+    except:
+        await msg.answer("Используй: /give user_id количество")
+        return
+
+    cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    if cursor.fetchone() is None:
+        cursor.execute("INSERT INTO users VALUES (?, 0)", (user_id,))
+
+    cursor.execute("UPDATE users SET coins = coins + ? WHERE user_id=?", (amount, user_id))
+    conn.commit()
+
+    await msg.answer("Выдано")
+
 @dp.message(lambda m: m.text and m.text.startswith("/ban"))
 async def ban(msg: types.Message):
     if msg.from_user.id != ADMIN_ID:
@@ -158,9 +219,8 @@ async def ban(msg: types.Message):
     cursor.execute("INSERT OR IGNORE INTO banned VALUES (?)", (user_id,))
     conn.commit()
 
-    await msg.answer("🚫 Забанен")
+    await msg.answer("Забанен")
 
-# 🔴 УДАЛЕНИЕ КРУЖКА
 @dp.message(lambda m: m.text and m.text.startswith("/delete"))
 async def delete_video(msg: types.Message):
     if msg.from_user.id != ADMIN_ID:
@@ -172,7 +232,7 @@ async def delete_video(msg: types.Message):
     res = cursor.fetchone()
 
     if not res:
-        await msg.answer("❌ Не найден")
+        await msg.answer("Не найден")
         return
 
     owner_id = res[0]
@@ -181,18 +241,16 @@ async def delete_video(msg: types.Message):
     conn.commit()
 
     try:
-        await bot.send_message(owner_id, "❌ Твой кружок не подходит")
+        await bot.send_message(owner_id, "Твой кружок не подходит")
     except:
         pass
 
-    await msg.answer("🗑 Удалено")
+    await msg.answer("Удалено")
 
 @dp.callback_query(lambda c: c.data.startswith("rate_"))
 async def rate(call: types.CallbackQuery):
     user_id = call.from_user.id
     _, video_id, score = call.data.split("_")
-    video_id = int(video_id)
-    score = int(score)
 
     cursor.execute("INSERT INTO ratings VALUES (?, ?, ?)", (video_id, user_id, score))
     conn.commit()
