@@ -5,9 +5,10 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-API_TOKEN = "8719742274:AAGPAuZxX5BXuvqrti5yV4auChHb5H51RHA"
+API_TOKEN = "ТВОЙ_ТОКЕН"
 LOG_CHAT_ID = -1003748900775
 ADMIN_ID = 858855330
+CHANNEL_ID = "@tinleo"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -31,6 +32,19 @@ kb = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+def sub_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 Подписаться", url="https://t.me/tinleo")],
+        [InlineKeyboardButton(text="✅ Проверить", callback_data="check_sub")]
+    ])
+
+async def check_sub(user_id):
+    try:
+        member = await bot.get_chat_member(CHANNEL_ID, user_id)
+        return member.status in ["member", "creator", "administrator"]
+    except:
+        return False
+
 def get_user(user_id):
     cursor.execute("SELECT coins FROM users WHERE user_id=?", (user_id,))
     r = cursor.fetchone()
@@ -52,13 +66,33 @@ def rating_kb(video_id):
         buttons.append(row)
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+@dp.message()
+async def global_check(msg: types.Message):
+    if not await check_sub(msg.from_user.id):
+        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
+        return
+
 @dp.message(Command("start"))
 async def start(msg: types.Message):
+    if not await check_sub(msg.from_user.id):
+        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
+        return
+
     get_user(msg.from_user.id)
     await msg.answer("Отправь кружок 🎥", reply_markup=kb)
 
+@dp.callback_query(lambda c: c.data == "check_sub")
+async def check_sub_btn(call: types.CallbackQuery):
+    if await check_sub(call.from_user.id):
+        await call.message.answer("✅ Доступ открыт", reply_markup=kb)
+    else:
+        await call.answer("❌ Ты не подписан", show_alert=True)
+
 @dp.message(lambda m: m.video_note)
 async def video(msg: types.Message):
+    if not await check_sub(msg.from_user.id):
+        return
+
     user_id = msg.from_user.id
     username = msg.from_user.username or "no_username"
 
@@ -99,7 +133,7 @@ async def my_ratings(msg: types.Message):
     rows = cursor.fetchall()
 
     if not rows:
-        await msg.answer("У твоих кружков пока нет оценок")
+        await msg.answer("Нет оценок")
         return
 
     text = "⭐ Оценки твоих кружков:\n\n"
@@ -111,7 +145,7 @@ async def my_ratings(msg: types.Message):
                 username = user.username or user.first_name
                 text += f"{score}/10 от @{username}\n"
             except:
-                text += f"{score}/10 (юзер скрыт)\n"
+                text += f"{score}/10\n"
         else:
             text += f"{score}/10 (анонимно)\n"
 
@@ -137,12 +171,7 @@ async def give_coins(msg: types.Message):
     cursor.execute("UPDATE users SET coins = coins + ? WHERE user_id=?", (amount, user_id))
     conn.commit()
 
-    await msg.answer(f"✅ Выдано {amount} монет пользователю {user_id}")
-
-    try:
-        await bot.send_message(user_id, f"💰 Тебе выдали {amount} монет")
-    except:
-        pass
+    await msg.answer("Готово")
 
 @dp.message(lambda m: m.text == "📺 Посмотреть кружок")
 async def watch(msg: types.Message):
@@ -163,17 +192,17 @@ async def watch(msg: types.Message):
     videos = cursor.fetchall()
 
     if not videos:
-        await msg.answer("😔 Новых кружков нет")
+        await msg.answer("😔 Нет новых кружков")
         return
 
     video_id, file_id = random.choice(videos)
 
-    cursor.execute("INSERT INTO viewed (user_id, video_id) VALUES (?, ?)", (user_id, video_id))
+    cursor.execute("INSERT INTO viewed VALUES (?, ?)", (user_id, video_id))
     cursor.execute("UPDATE users SET coins = coins - 1 WHERE user_id=?", (user_id,))
     conn.commit()
 
     await msg.answer_video_note(file_id)
-    await msg.answer("Оцени кружок:", reply_markup=rating_kb(video_id))
+    await msg.answer("Оцени:", reply_markup=rating_kb(video_id))
 
 @dp.callback_query(lambda c: c.data.startswith("rate_"))
 async def rate(call: types.CallbackQuery):
@@ -184,32 +213,28 @@ async def rate(call: types.CallbackQuery):
 
     cursor.execute("SELECT * FROM ratings WHERE video_id=? AND rater_id=?", (video_id, user_id))
     if cursor.fetchone():
-        await call.answer("Ты уже оценил")
+        await call.answer("Уже оценил")
         return
 
     cursor.execute("INSERT INTO ratings VALUES (?, ?, ?)", (video_id, user_id, score))
     conn.commit()
 
     cursor.execute("SELECT user_id FROM videos WHERE id=?", (video_id,))
-    owner = cursor.fetchone()
-    if not owner:
-        await call.answer("Ошибка")
-        return
+    owner_id = cursor.fetchone()[0]
 
-    owner_id = owner[0]
     username = call.from_user.username or "no_username"
 
     if score >= 5:
-        text = f"⭐ Твой кружок оценили на {score}/10\n👤 @{username}"
+        text = f"⭐ Оценка {score}/10 от @{username}"
     else:
-        text = f"⭐ Твой кружок оценили на {score}/10"
+        text = f"⭐ Оценка {score}/10"
 
     try:
         await bot.send_message(owner_id, text)
     except:
         pass
 
-    await call.answer("Оценка отправлена")
+    await call.answer("Оценено")
 
 async def main():
     await dp.start_polling(bot)
