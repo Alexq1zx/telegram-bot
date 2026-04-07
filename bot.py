@@ -13,13 +13,11 @@ dp = Dispatcher()
 conn = sqlite3.connect("db.sqlite3")
 cursor = conn.cursor()
 
-# таблицы
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, coins INTEGER)")
 cursor.execute("CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, file_id TEXT, user_id INTEGER)")
 cursor.execute("CREATE TABLE IF NOT EXISTS viewed (user_id INTEGER, video_id INTEGER)")
 conn.commit()
 
-# кнопки
 kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📺 Посмотреть кружок")],
@@ -29,46 +27,47 @@ kb = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# старт
+def get_user(user_id):
+    cursor.execute("SELECT coins FROM users WHERE user_id=?", (user_id,))
+    result = cursor.fetchone()
+    if result is None:
+        cursor.execute("INSERT INTO users VALUES (?, 0)", (user_id,))
+        conn.commit()
+        return 0
+    return result[0]
+
 @dp.message(Command("start"))
 async def start(msg: types.Message):
-    cursor.execute("INSERT OR IGNORE INTO users VALUES (?, 0)", (msg.from_user.id,))
-    conn.commit()
+    get_user(msg.from_user.id)
     await msg.answer("Отправь кружок 🎥", reply_markup=kb)
 
-# прием кружка
 @dp.message(lambda m: m.video_note)
 async def video(msg: types.Message):
-    cursor.execute("INSERT INTO videos (file_id, user_id) VALUES (?, ?)", (msg.video_note.file_id, msg.from_user.id))
-    cursor.execute("UPDATE users SET coins = coins + 1 WHERE user_id=?", (msg.from_user.id,))
+    user_id = msg.from_user.id
+    get_user(user_id)
+    cursor.execute("INSERT INTO videos (file_id, user_id) VALUES (?, ?)", (msg.video_note.file_id, user_id))
+    cursor.execute("UPDATE users SET coins = coins + 1 WHERE user_id=?", (user_id,))
     conn.commit()
     await msg.answer("+1 монета 💰")
 
-# баланс
 @dp.message(lambda m: m.text == "💰 Мой баланс")
 async def balance(msg: types.Message):
-    cursor.execute("SELECT coins FROM users WHERE user_id=?", (msg.from_user.id,))
-    coins = cursor.fetchone()[0]
+    coins = get_user(msg.from_user.id)
     await msg.answer(f"💰 У тебя {coins} монет")
 
-# условия
 @dp.message(lambda m: m.text == "📜 Условия пользования")
 async def rules(msg: types.Message):
     await msg.answer("📜 Просто отправляй кружки и смотри чужие")
 
-# просмотр кружка
 @dp.message(lambda m: m.text == "📺 Посмотреть кружок")
 async def watch(msg: types.Message):
     user_id = msg.from_user.id
-
-    cursor.execute("SELECT coins FROM users WHERE user_id=?", (user_id,))
-    coins = cursor.fetchone()[0]
+    coins = get_user(user_id)
 
     if coins <= 0:
         await msg.answer("❌ Нет монет")
         return
 
-    # берём кружки, которые пользователь ещё не видел
     cursor.execute("""
     SELECT id, file_id FROM videos 
     WHERE user_id != ? AND id NOT IN (
@@ -84,10 +83,7 @@ async def watch(msg: types.Message):
 
     video_id, file_id = random.choice(videos)
 
-    # записываем просмотр
     cursor.execute("INSERT INTO viewed (user_id, video_id) VALUES (?, ?)", (user_id, video_id))
-
-    # списываем монету
     cursor.execute("UPDATE users SET coins = coins - 1 WHERE user_id=?", (user_id,))
     conn.commit()
 
