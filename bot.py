@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-API_TOKEN = "8719742274:AAGPAuZxX5BXuvqrti5yV4auChHb5H51RHA"
+API_TOKEN = "ТВОЙ_ТОКЕН"
 LOG_CHAT_ID = -1003748900775
 ADMIN_ID = 858855330
 CHANNEL_ID = "@tinleo"
@@ -88,7 +88,7 @@ async def start(msg: types.Message):
 @dp.callback_query(lambda c: c.data == "check_sub")
 async def check_sub_btn(call: types.CallbackQuery):
     if await check_sub(call.from_user.id):
-        await call.message.answer("✅ Доступ открыт,запиши свой первый кружок!", reply_markup=kb)
+        await call.message.answer("✅ Доступ открыт, запиши свой первый кружок!", reply_markup=kb)
     else:
         await call.answer("❌ Ты не подписан", show_alert=True)
 
@@ -109,10 +109,10 @@ async def video(msg: types.Message):
     cursor.execute("INSERT INTO videos (file_id, user_id, active) VALUES (?, ?, 1)", (msg.video_note.file_id, user_id))
     video_id = cursor.lastrowid
 
-    cursor.execute("UPDATE users SET coins = coins + 1 WHERE user_id=?", (user_id,))
+    cursor.execute("UPDATE users SET coins = coins + 3 WHERE user_id=?", (user_id,))
     conn.commit()
 
-    await msg.answer("+1 монета 💰")
+    await msg.answer("+3 монеты 💰")
 
     try:
         await bot.send_message(LOG_CHAT_ID, f"📥 Кружок\n👤 @{username}\n🆔 {user_id}\n🎥 ID кружка: {video_id}")
