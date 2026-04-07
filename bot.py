@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-API_TOKEN = "ТВОЙ_ТОКЕН"
+API_TOKEN = "8719742274:AAGPAuZxX5BXuvqrti5yV4auChHb5H51RHA"
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
