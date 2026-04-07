@@ -199,13 +199,25 @@ async def my_ratings(msg: types.Message):
 
     await msg.answer(text)
 
+@dp.message(lambda m: m.text == "📜 Условия")
+async def rules(msg: types.Message):
+    if is_banned(msg.from_user.id):
+        await banned_msg(msg)
+        return
+    await msg.answer("📜 Правила:\n\n• Без спама\n• Без жести\n• Иначе бан")
+
 @dp.message(lambda m: m.text and m.text.startswith("/give"))
 async def give_coins(msg: types.Message):
     if msg.from_user.id != ADMIN_ID:
         return
-    _, user_id, amount = msg.text.split()
-    user_id = int(user_id)
-    amount = int(amount)
+
+    try:
+        _, user_id, amount = msg.text.split()
+        user_id = int(user_id)
+        amount = int(amount)
+    except:
+        await msg.answer("Используй: /give user_id количество")
+        return
 
     cursor.execute("INSERT OR IGNORE INTO users VALUES (?, 0)", (user_id,))
     cursor.execute("UPDATE users SET coins = coins + ? WHERE user_id=?", (amount, user_id))
