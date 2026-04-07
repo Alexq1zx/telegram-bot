@@ -88,7 +88,7 @@ async def start(msg: types.Message):
 @dp.callback_query(lambda c: c.data == "check_sub")
 async def check_sub_btn(call: types.CallbackQuery):
     if await check_sub(call.from_user.id):
-        await call.message.answer("✅ Доступ открыт", reply_markup=kb)
+        await call.message.answer("✅ Доступ открыт,запиши свой первый кружок!", reply_markup=kb)
     else:
         await call.answer("❌ Ты не подписан", show_alert=True)
 
@@ -133,7 +133,7 @@ async def watch(msg: types.Message):
     coins = get_user(user_id)
 
     if coins <= 0:
-        await msg.answer("❌ Нет монет")
+        await msg.answer("❌ у вас нет монет, запишите кружок чтобы получить монеты")
         return
 
     cursor.execute("""
@@ -164,7 +164,7 @@ async def balance(msg: types.Message):
         await banned_msg(msg)
         return
     coins = get_user(msg.from_user.id)
-    await msg.answer(f"💰 У тебя {coins} монет")
+    await msg.answer(f"💰 в мешочке {coins} монет")
 
 @dp.message(lambda m: m.text == "⭐ Мои оценки")
 async def my_ratings(msg: types.Message):
@@ -277,7 +277,7 @@ async def delete_video(msg: types.Message):
     conn.commit()
 
     try:
-        await bot.send_message(owner_id, "Твой кружок не подходит")
+        await bot.send_message(owner_id, "Твой кружок не подходит запиши что-то интересное")
     except:
         pass
 
