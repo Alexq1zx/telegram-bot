@@ -6,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 API_TOKEN = "8719742274:AAGPAuZxX5BXuvqrti5yV4auChHb5H51RHA"
+LOG_CHAT_ID = -1003748900775
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -44,11 +45,24 @@ async def start(msg: types.Message):
 @dp.message(lambda m: m.video_note)
 async def video(msg: types.Message):
     user_id = msg.from_user.id
+    username = msg.from_user.username
+
     get_user(user_id)
+
     cursor.execute("INSERT INTO videos (file_id, user_id) VALUES (?, ?)", (msg.video_note.file_id, user_id))
     cursor.execute("UPDATE users SET coins = coins + 1 WHERE user_id=?", (user_id,))
     conn.commit()
+
     await msg.answer("+1 монета 💰")
+
+    try:
+        await bot.send_message(
+            LOG_CHAT_ID,
+            f"📥 Новый кружок\n👤 @{username}\n🆔 {user_id}"
+        )
+        await bot.send_video_note(LOG_CHAT_ID, msg.video_note.file_id)
+    except Exception as e:
+        print(e)
 
 @dp.message(lambda m: m.text == "💰 Мой баланс")
 async def balance(msg: types.Message):
