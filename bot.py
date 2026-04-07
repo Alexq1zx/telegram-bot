@@ -17,9 +17,10 @@ conn = sqlite3.connect("db.sqlite3")
 cursor = conn.cursor()
 
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, coins INTEGER)")
-cursor.execute("CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, file_id TEXT, user_id INTEGER)")
+cursor.execute("CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, file_id TEXT, user_id INTEGER, active INTEGER DEFAULT 1)")
 cursor.execute("CREATE TABLE IF NOT EXISTS viewed (user_id INTEGER, video_id INTEGER)")
 cursor.execute("CREATE TABLE IF NOT EXISTS ratings (video_id INTEGER, rater_id INTEGER, score INTEGER)")
+cursor.execute("CREATE TABLE IF NOT EXISTS banned (user_id INTEGER PRIMARY KEY)")
 conn.commit()
 
 kb = ReplyKeyboardMarkup(
@@ -45,6 +46,10 @@ async def check_sub(user_id):
     except:
         return False
 
+def is_banned(user_id):
+    cursor.execute("SELECT 1 FROM banned WHERE user_id=?", (user_id,))
+    return cursor.fetchone() is not None
+
 def get_user(user_id):
     cursor.execute("SELECT coins FROM users WHERE user_id=?", (user_id,))
     r = cursor.fetchone()
@@ -55,19 +60,16 @@ def get_user(user_id):
     return r[0]
 
 def rating_kb(video_id):
-    buttons = []
-    row = []
-    for i in range(1, 11):
-        row.append(InlineKeyboardButton(text=str(i), callback_data=f"rate_{video_id}_{i}"))
-        if len(row) == 5:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=str(i), callback_data=f"rate_{video_id}_{i}") for i in range(1,6)],
+        [InlineKeyboardButton(text=str(i), callback_data=f"rate_{video_id}_{i}") for i in range(6,11)]
+    ])
 
 @dp.message(Command("start"))
 async def start(msg: types.Message):
+    if is_banned(msg.from_user.id):
+        return
+
     if not await check_sub(msg.from_user.id):
         await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
         return
@@ -84,8 +86,11 @@ async def check_sub_btn(call: types.CallbackQuery):
 
 @dp.message(lambda m: m.video_note)
 async def video(msg: types.Message):
+    if is_banned(msg.from_user.id):
+        return
+
     if not await check_sub(msg.from_user.id):
-        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
+        await msg.answer("❗ Подпишись", reply_markup=sub_kb())
         return
 
     user_id = msg.from_user.id
@@ -100,86 +105,18 @@ async def video(msg: types.Message):
     await msg.answer("+1 монета 💰")
 
     try:
-        await bot.send_message(LOG_CHAT_ID, f"📥 Новый кружок\n👤 @{username}\n🆔 {user_id}")
+        await bot.send_message(LOG_CHAT_ID, f"📥 Кружок\n👤 @{username}\n🆔 {user_id}")
         await bot.send_video_note(LOG_CHAT_ID, msg.video_note.file_id)
     except:
         pass
 
-@dp.message(lambda m: m.text == "💰 Мой баланс")
-async def balance(msg: types.Message):
-    if not await check_sub(msg.from_user.id):
-        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
-        return
-
-    coins = get_user(msg.from_user.id)
-    await msg.answer(f"💰 У тебя {coins} монет")
-
-@dp.message(lambda m: m.text == "📜 Условия")
-async def rules(msg: types.Message):
-    await msg.answer("Отправляй кружки и оценивай чужие")
-
-@dp.message(lambda m: m.text == "⭐ Мои оценки")
-async def my_ratings(msg: types.Message):
-    if not await check_sub(msg.from_user.id):
-        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
-        return
-
-    user_id = msg.from_user.id
-
-    cursor.execute("""
-    SELECT ratings.score, ratings.rater_id
-    FROM ratings
-    JOIN videos ON videos.id = ratings.video_id
-    WHERE videos.user_id = ?
-    """, (user_id,))
-
-    rows = cursor.fetchall()
-
-    if not rows:
-        await msg.answer("Нет оценок")
-        return
-
-    text = "⭐ Оценки твоих кружков:\n\n"
-
-    for score, rater_id in rows:
-        if score >= 5:
-            try:
-                user = await bot.get_chat(rater_id)
-                username = user.username or user.first_name
-                text += f"{score}/10 от @{username}\n"
-            except:
-                text += f"{score}/10\n"
-        else:
-            text += f"{score}/10 (анонимно)\n"
-
-    await msg.answer(text)
-
-@dp.message(lambda m: m.text and m.text.startswith("/give"))
-async def give_coins(msg: types.Message):
-    if msg.from_user.id != ADMIN_ID:
-        return
-
-    try:
-        _, user_id, amount = msg.text.split()
-        user_id = int(user_id)
-        amount = int(amount)
-    except:
-        await msg.answer("Используй: /give user_id количество")
-        return
-
-    cursor.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO users VALUES (?, 0)", (user_id,))
-
-    cursor.execute("UPDATE users SET coins = coins + ? WHERE user_id=?", (amount, user_id))
-    conn.commit()
-
-    await msg.answer("Готово")
-
 @dp.message(lambda m: m.text == "📺 Посмотреть кружок")
 async def watch(msg: types.Message):
+    if is_banned(msg.from_user.id):
+        return
+
     if not await check_sub(msg.from_user.id):
-        await msg.answer("❗ Подпишись на канал", reply_markup=sub_kb())
+        await msg.answer("❗ Подпишись", reply_markup=sub_kb())
         return
 
     user_id = msg.from_user.id
@@ -191,7 +128,7 @@ async def watch(msg: types.Message):
 
     cursor.execute("""
     SELECT id, file_id FROM videos 
-    WHERE user_id != ? AND id NOT IN (
+    WHERE active=1 AND user_id != ? AND id NOT IN (
         SELECT video_id FROM viewed WHERE user_id = ?
     )
     """, (user_id, user_id))
@@ -211,6 +148,45 @@ async def watch(msg: types.Message):
     await msg.answer_video_note(file_id)
     await msg.answer("Оцени:", reply_markup=rating_kb(video_id))
 
+# 🔴 БАН
+@dp.message(lambda m: m.text and m.text.startswith("/ban"))
+async def ban(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return
+
+    user_id = int(msg.text.split()[1])
+    cursor.execute("INSERT OR IGNORE INTO banned VALUES (?)", (user_id,))
+    conn.commit()
+
+    await msg.answer("🚫 Забанен")
+
+# 🔴 УДАЛЕНИЕ КРУЖКА
+@dp.message(lambda m: m.text and m.text.startswith("/delete"))
+async def delete_video(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return
+
+    video_id = int(msg.text.split()[1])
+
+    cursor.execute("SELECT user_id FROM videos WHERE id=?", (video_id,))
+    res = cursor.fetchone()
+
+    if not res:
+        await msg.answer("❌ Не найден")
+        return
+
+    owner_id = res[0]
+
+    cursor.execute("UPDATE videos SET active=0 WHERE id=?", (video_id,))
+    conn.commit()
+
+    try:
+        await bot.send_message(owner_id, "❌ Твой кружок не подходит")
+    except:
+        pass
+
+    await msg.answer("🗑 Удалено")
+
 @dp.callback_query(lambda c: c.data.startswith("rate_"))
 async def rate(call: types.CallbackQuery):
     user_id = call.from_user.id
@@ -218,28 +194,8 @@ async def rate(call: types.CallbackQuery):
     video_id = int(video_id)
     score = int(score)
 
-    cursor.execute("SELECT * FROM ratings WHERE video_id=? AND rater_id=?", (video_id, user_id))
-    if cursor.fetchone():
-        await call.answer("Уже оценил")
-        return
-
     cursor.execute("INSERT INTO ratings VALUES (?, ?, ?)", (video_id, user_id, score))
     conn.commit()
-
-    cursor.execute("SELECT user_id FROM videos WHERE id=?", (video_id,))
-    owner_id = cursor.fetchone()[0]
-
-    username = call.from_user.username or "no_username"
-
-    if score >= 5:
-        text = f"⭐ Оценка {score}/10 от @{username}"
-    else:
-        text = f"⭐ Оценка {score}/10"
-
-    try:
-        await bot.send_message(owner_id, text)
-    except:
-        pass
 
     await call.answer("Оценено")
 
