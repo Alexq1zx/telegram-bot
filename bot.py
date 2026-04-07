@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-API_TOKEN = "8719742274:AAGPAuZxX5BXuvqrti5yV4auChHb5H51RHA"
+API_TOKEN = "ТВОЙ_ТОКЕН"
 LOG_CHAT_ID = -1003748900775
 
 bot = Bot(token=API_TOKEN)
@@ -87,16 +87,32 @@ async def rules(msg: types.Message):
 @dp.message(lambda m: m.text == "⭐ Мои оценки")
 async def my_ratings(msg: types.Message):
     user_id = msg.from_user.id
-    cursor.execute("SELECT score FROM ratings WHERE rater_id=?", (user_id,))
-    ratings = cursor.fetchall()
 
-    if not ratings:
-        await msg.answer("У тебя нет оценок")
+    cursor.execute("""
+    SELECT ratings.score, ratings.rater_id
+    FROM ratings
+    JOIN videos ON videos.id = ratings.video_id
+    WHERE videos.user_id = ?
+    """, (user_id,))
+
+    rows = cursor.fetchall()
+
+    if not rows:
+        await msg.answer("У твоих кружков пока нет оценок")
         return
 
-    text = "⭐ Твои оценки:\n"
-    for r in ratings:
-        text += f"{r[0]}/10\n"
+    text = "⭐ Оценки твоих кружков:\n\n"
+
+    for score, rater_id in rows:
+        if score >= 5:
+            try:
+                user = await bot.get_chat(rater_id)
+                username = user.username or user.first_name
+                text += f"{score}/10 от @{username}\n"
+            except:
+                text += f"{score}/10 (юзер скрыт)\n"
+        else:
+            text += f"{score}/10 (анонимно)\n"
 
     await msg.answer(text)
 
