@@ -103,13 +103,18 @@ async def video(msg: types.Message):
     get_user(user_id)
 
     cursor.execute("INSERT INTO videos (file_id, user_id, active) VALUES (?, ?, 1)", (msg.video_note.file_id, user_id))
+    video_id = cursor.lastrowid
+
     cursor.execute("UPDATE users SET coins = coins + 1 WHERE user_id=?", (user_id,))
     conn.commit()
 
     await msg.answer("+1 монета 💰")
 
     try:
-        await bot.send_message(LOG_CHAT_ID, f"📥 Кружок\n👤 @{username}\n🆔 {user_id}")
+        await bot.send_message(
+            LOG_CHAT_ID,
+            f"📥 Кружок\n👤 @{username}\n🆔 {user_id}\n🎥 ID кружка: {video_id}"
+        )
         await bot.send_video_note(LOG_CHAT_ID, msg.video_note.file_id)
     except:
         pass
@@ -149,7 +154,7 @@ async def watch(msg: types.Message):
     conn.commit()
 
     await msg.answer_video_note(file_id)
-    await msg.answer(f"ID кружка: {video_id}", reply_markup=rating_kb(video_id))
+    await msg.answer("Оцени кружок:", reply_markup=rating_kb(video_id))
 
 @dp.message(lambda m: m.text == "💰 Мой баланс")
 async def balance(msg: types.Message):
@@ -260,5 +265,7 @@ async def rate(call: types.CallbackQuery):
 async def main():
     await dp.start_polling(bot)
 
+if __name__ == "__main__":
+    asyncio.run(main())
 if __name__ == "__main__":
     asyncio.run(main())
