@@ -3,7 +3,7 @@ import random
 import sqlite3
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 API_TOKEN = "8719742274:AAGPAuZxX5BXuvqrti5yV4auChHb5H51RHA"
 LOG_CHAT_ID = -1003748900775
@@ -17,25 +17,39 @@ cursor = conn.cursor()
 cursor.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, coins INTEGER)")
 cursor.execute("CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, file_id TEXT, user_id INTEGER)")
 cursor.execute("CREATE TABLE IF NOT EXISTS viewed (user_id INTEGER, video_id INTEGER)")
+cursor.execute("CREATE TABLE IF NOT EXISTS ratings (video_id INTEGER, rater_id INTEGER, score INTEGER)")
 conn.commit()
 
 kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📺 Посмотреть кружок")],
         [KeyboardButton(text="💰 Мой баланс")],
-        [KeyboardButton(text="📜 Условия пользования")]
+        [KeyboardButton(text="⭐ Мои оценки")],
+        [KeyboardButton(text="📜 Условия")]
     ],
     resize_keyboard=True
 )
 
 def get_user(user_id):
     cursor.execute("SELECT coins FROM users WHERE user_id=?", (user_id,))
-    result = cursor.fetchone()
-    if result is None:
+    r = cursor.fetchone()
+    if r is None:
         cursor.execute("INSERT INTO users VALUES (?, 0)", (user_id,))
         conn.commit()
         return 0
-    return result[0]
+    return r[0]
+
+def rating_kb(video_id):
+    buttons = []
+    row = []
+    for i in range(1, 11):
+        row.append(InlineKeyboardButton(text=str(i), callback_data=f"rate_{video_id}_{i}"))
+        if len(row) == 5:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 @dp.message(Command("start"))
 async def start(msg: types.Message):
@@ -56,22 +70,35 @@ async def video(msg: types.Message):
     await msg.answer("+1 монета 💰")
 
     try:
-        await bot.send_message(
-            LOG_CHAT_ID,
-            f"📥 Новый кружок\n👤 @{username}\n🆔 {user_id}"
-        )
+        await bot.send_message(LOG_CHAT_ID, f"📥 Новый кружок\n👤 @{username}\n🆔 {user_id}")
         await bot.send_video_note(LOG_CHAT_ID, msg.video_note.file_id)
-    except Exception as e:
-        print(e)
+    except:
+        pass
 
 @dp.message(lambda m: m.text == "💰 Мой баланс")
 async def balance(msg: types.Message):
     coins = get_user(msg.from_user.id)
     await msg.answer(f"💰 У тебя {coins} монет")
 
-@dp.message(lambda m: m.text == "📜 Условия пользования")
+@dp.message(lambda m: m.text == "📜 Условия")
 async def rules(msg: types.Message):
-    await msg.answer("📜 Просто отправляй кружки и смотри чужие")
+    await msg.answer("Отправляй кружки и оценивай чужие")
+
+@dp.message(lambda m: m.text == "⭐ Мои оценки")
+async def my_ratings(msg: types.Message):
+    user_id = msg.from_user.id
+    cursor.execute("SELECT score FROM ratings WHERE rater_id=?", (user_id,))
+    ratings = cursor.fetchall()
+
+    if not ratings:
+        await msg.answer("У тебя нет оценок")
+        return
+
+    text = "⭐ Твои оценки:\n"
+    for r in ratings:
+        text += f"{r[0]}/10\n"
+
+    await msg.answer(text)
 
 @dp.message(lambda m: m.text == "📺 Посмотреть кружок")
 async def watch(msg: types.Message):
@@ -102,6 +129,34 @@ async def watch(msg: types.Message):
     conn.commit()
 
     await msg.answer_video_note(file_id)
+    await msg.answer("Оцени кружок:", reply_markup=rating_kb(video_id))
+
+@dp.callback_query(lambda c: c.data.startswith("rate_"))
+async def rate(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    _, video_id, score = call.data.split("_")
+    video_id = int(video_id)
+    score = int(score)
+
+    cursor.execute("INSERT INTO ratings VALUES (?, ?, ?)", (video_id, user_id, score))
+    conn.commit()
+
+    cursor.execute("SELECT user_id FROM videos WHERE id=?", (video_id,))
+    owner_id = cursor.fetchone()[0]
+
+    username = call.from_user.username
+
+    if score >= 5:
+        text = f"⭐ Твой кружок оценили на {score}/10\n👤 @{username}"
+    else:
+        text = f"⭐ Твой кружок оценили на {score}/10"
+
+    try:
+        await bot.send_message(owner_id, text)
+    except:
+        pass
+
+    await call.answer("Оценка отправлена")
 
 async def main():
     await dp.start_polling(bot)
